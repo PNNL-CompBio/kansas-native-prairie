@@ -1,0 +1,32 @@
+import pandas as pd
+import numpy as np
+import argparse, sys, re
+
+
+def reindex_contig_gene_id( contig_id ):
+    return lambda match_obj: 'ID={}_{};'.format( contig_id, int(match_obj.group(2)) - 1 )
+
+def map_seqid(annotation2bowtie_file, gff_in, gff_out):
+    cgRE = re.compile(r'ID=([0-9]+)_([0-9]+);')
+    annotation2bowtie_map = pd.read_table(annotation2bowtie_file,
+                            names=['annotation','bowtie','length'],index_col='annotation')
+    with gff_out  as out:
+        for line in gff_in:
+            m = line.split('\t')
+            newline = line
+            if len(m) > 8 and m[0] in annotation2bowtie_map.index:
+                newline = re.sub( m[0],  annotation2bowtie_map.loc[m[0],'bowtie'], line )
+                newline = cgRE.sub( reindex_contig_gene_id( m[0] ), newline )
+            out.write(newline)
+    
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Convert gff to new mapping')
+    parser.add_argument( 'mapfile', nargs='?', 
+                         type=argparse.FileType('r'), default=sys.stdin)
+    parser.add_argument( 'gff_in', 
+                         type=argparse.FileType('r'), default=sys.stdin)
+    parser.add_argument( 'gff_out', nargs='?',
+                        type=argparse.FileType('w'), default=sys.stdout)
+    args = parser.parse_args()
+    map_seqid( args.mapfile, args.gff_in, args.gff_out )

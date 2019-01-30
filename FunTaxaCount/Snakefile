@@ -1,0 +1,78 @@
+data_type = ['cDNA', 'gDNA']
+soil_sample=['KansasA', 'KansasB', 'KansasC']
+treatment = ['gly', 'nogly']
+replicate = ['rep1', 'rep2', 'rep3']
+
+BAM=['moleculo_cDNA_KansasA_HiSeq_gly_rep1-R1-ext_allData_nonrRNA.aligned.bam']
+
+rule generate_gff:
+    input:
+        "{annotation_dir}/{annotation}.mapping.txt",
+        "{annotation_dir}/functional_and_taxonomic_table.txt"
+    output:
+        "{annotation_dir}/{annotation}.generated.mapped.gff"
+    shell:
+        "python src/generate_gff.py {input} {output}"
+
+rule count_reads:
+    input:
+        expand('{data_type}_BAM/moleculo_{data_type}_{soil_sample}_HiSeq_{treatment}_{replicate}-R1-ext_allData_nonrRNA.aligned.bam', data_type=data_type,soil_sample=soil_sample, treatment=treatment, replicate=replicate),
+        rules.generate_gff.output
+    output:
+        "{sample_type}_Counts/{sample}.bam.counts"
+    shell:
+        "htseq-count --format=bam --stranded=no --type=CDS --idattr=ID --mode=union {input} > {output}"
+        
+rule combine_counts:
+    input:
+        rules.count_reads.output
+    output:
+        "{sample_type}_Counts/{sample}_read_counts.tsv"
+    shell:
+        "python src/get_read_counts.py --read_count_files {input}/*no-glycine*.counts --out {output}"
+
+rule fun_counts:
+    input:
+        read_counts = "{sample}_Counts/{sample}_read_counts.tsv",
+        orf = "Annotation/ORF_annotation_table.txt",
+        funtax = "Annotation/functional_and_taxonomic_table.txt"
+    output:
+        "{sample}_Counts/{sample}_function_{function}_counts.tsv"
+    shell:
+        "python src/get_function_counts.py "
+        "  {input.orf}"
+        "  {input.funtax}"
+        "  {input.read_counts}"
+        "  --function {wildcards.function}"
+        "  --out {output}"
+
+rule taxa_counts:
+    input:
+        "Annotation/functional_and_taxonomic_table.txt",
+        "Annotation/ORF_annotation_table.txt",
+        "{sample}_Counts/{sample}_read_counts.tsv",
+        "Taxonomy/ncbi.map",
+        "Taxonomy/nodes.dmp",
+        "Taxonomy/merged.dmp"
+    output:
+        "{sample}_Counts/{sample}_taxa_{rank}_counts.tsv"
+    shell:
+        "python src/get_rank_counts.py {input} --rank {wildcards.rank} --out {output}"
+
+rule funtaxa_counts:
+    input:
+        "Annotation/functional_and_taxonomic_table.txt",
+        "Annotation/ORF_annotation_table.txt",
+        "{sample}_Counts/{sample}_read_counts.tsv",
+        "Taxonomy/ncbi.map",
+        "Taxonomy/nodes.dmp",
+        "Taxonomy/merged.dmp"
+    output:
+        "{sample}_Counts/{sample}_funtaxa_{function}_{rank}_counts.tsv"
+    shell:
+        "python src/get_fun_rank_counts.py {input}"
+        "  --rank {wildcards.rank}"
+        "  --function {wildcards.function}"
+        "  --out {output}"
+        
+        
